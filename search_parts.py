@@ -2,12 +2,18 @@ import pandas as pd
 import re
 
 def load_excel(file_obj):
-    
     return pd.read_excel(file_obj)
 
 def search_in_df(part, df, source_name, possible_columns=None):
     if possible_columns is None:
         possible_columns = ['Part Number', 'Item Number', 'Part #', 'Part No', 'P/N', 'PART#']
+
+    # Guard against None/NaN part input
+    if part is None or (isinstance(part, float) and pd.isna(part)):
+        return []
+    part = str(part).strip()
+    if not part:
+        return []
 
     found_column = None
     for col in df.columns:
@@ -18,12 +24,14 @@ def search_in_df(part, df, source_name, possible_columns=None):
         raise ValueError(f"No valid part number column found in {source_name}. Expected one of: {possible_columns}")
 
     results = []
-    part_clean = part.strip().upper()
-    part_digits = re.sub(r'\D', '', part_clean)  
+    part_clean = part.upper()
+    part_digits = re.sub(r'\D', '', part_clean)
 
-    col_series = df[found_column].astype(str).str.strip()
+    # Cast to str, replace "nan" strings with empty string
+    col_series = df[found_column].fillna('').astype(str).str.strip()
 
-    exact_mask = col_series == part_clean
+    # Exact match
+    exact_mask = col_series.str.upper() == part_clean
     if exact_mask.any():
         for _, row in df[exact_mask].iterrows():
             results.append({
@@ -34,11 +42,13 @@ def search_in_df(part, df, source_name, possible_columns=None):
                 "match_type": "Exact"
             })
 
-    # Numeric match (avoid duplicates)
+    # Numeric match (skip empty and avoid duplicates with exact)
     if part_digits:
         for idx, val in col_series.items():
+            if not val:  # skip empty
+                continue
             val_digits = re.sub(r'\D', '', val)
-            if val_digits == part_digits and not (col_series[idx] == part_clean):
+            if val_digits == part_digits and col_series[idx].upper() != part_clean:
                 results.append({
                     "original_part": part,
                     "variant_used": val_digits,
@@ -48,5 +58,3 @@ def search_in_df(part, df, source_name, possible_columns=None):
                 })
 
     return results
-
-
